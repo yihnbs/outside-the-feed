@@ -40,7 +40,7 @@ jobs:
         run: |
           git config user.name  "outside-the-feed-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add docs/videos.js data/raw_pool.json collect/queries.json
+          git add docs/videos.js data/raw_pool.json data/channel_stats.json collect/queries.json collect/auto_channels.csv
           git diff --cached --quiet || git commit -m "영상 풀 갱신 $(date -u +%Y-%m-%d)"
           git push
 

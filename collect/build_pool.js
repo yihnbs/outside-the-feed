@@ -67,6 +67,78 @@ function topicOf(v) {
   return { tp: c.topic, sb: c.sub || '', how: 'video_override' };
 }
 
+// ---------- CSV ----------
+function readCsv(file) {
+  if (!fs.existsSync(file)) return [];
+  const text = fs.readFileSync(file, 'utf8').replace(/^﻿/, ''), rows = [];
+  let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cell); cell = ''; if (row.some(x => x !== '')) rows.push(row); row = []; }
+    else cell += ch;
+  }
+  row.push(cell); if (row.some(x => x !== '')) rows.push(row);
+  const head = rows.shift() || [];
+  return rows.map(r => Object.fromEntries(head.map((h, i) => [h, r[i] ?? ''])));
+}
+const csvCell = s => /[",\n\r]/.test(String(s ?? '')) ? '"' + String(s).replace(/"/g, '""') + '"' : String(s ?? '');
+
+// ---------- 자동 구독 채널 (collect/auto_channels.csv) ----------
+// 검색으로 처음 발견됐고 품질 필터를 통과한 채널 중, 영상 2개 이상이 같은 분야(채널 영상의 60% 이상)로 분류되고
+// 구독자 수가 기준 이상인 채널을 다음 날부터 RSS로 따라간다 (RSS는 무료·무제한).
+// 30일 동안 새 영상이 없으면 자동으로 빠지고, enabled를 0으로 바꾼 채널은 다시 추가되지 않는다.
+const AUTO_FILE = path.join(__dirname, 'auto_channels.csv');
+const AUTO_HEAD = ['topic', 'sub', 'channel_title', 'channel_id', 'lang', 'enabled', 'added', 'last_video', 'subs'];
+function updateAutoChannels(rows, raw, stats, listed) {
+  const MAX = +(process.env.AUTO_MAX || 300), PER_T = Math.ceil(MAX / C.TOPIC_IDS.length), DAILY = +(process.env.AUTO_DAILY || 60);
+  const today = new Date().toISOString().slice(0, 10), days = d => (Date.parse(today) - Date.parse(d || '2000-01-01')) / 864e5;
+  const last = {};
+  for (const v of raw.videos) { const d = v.published || v.first_seen || ''; if (v.channel_id && d > (last[v.channel_id] || '')) last[v.channel_id] = d; }
+  const kept = [], removed = [];
+  for (const r of readCsv(AUTO_FILE)) {
+    if (!r.channel_id || listed.has(r.channel_id)) continue;            // channels.csv로 옮긴 채널은 여기서 뺀다
+    r.last_video = last[r.channel_id] || r.last_video || '';
+    if (r.enabled === '0') { kept.push(r); continue; }
+    if (days(r.added) >= 7 && days(r.last_video) > 30) { removed.push(r); continue; }
+    kept.push(r);
+  }
+  const have = new Set(kept.map(r => r.channel_id)), active = kept.filter(r => r.enabled !== '0');
+  const perTopic = {}; active.forEach(r => perTopic[r.topic] = (perTopic[r.topic] || 0) + 1);
+  const byCh = new Map();
+  for (const r of rows) {
+    const id = r.v.channel_id;
+    if (r.v.src !== 'search' || !id || listed.has(id) || have.has(id)) continue;
+    if (!byCh.has(id)) byCh.set(id, []);
+    byCh.get(id).push(r);
+  }
+  const top = (arr, f) => { const c = {}; arr.forEach(x => c[f(x)] = (c[f(x)] || 0) + 1); return Object.entries(c).sort((a, b) => b[1] - a[1])[0] || ['', 0]; };
+  const cands = [];
+  for (const [id, rs] of byCh) {
+    const [tp, n] = top(rs, r => r.tp), subs = (stats[id] || {}).subs;
+    if (n < 2 || n / rs.length < 0.6 || subs == null || subs < (tp === 'news' ? 50000 : 5000)) continue;
+    // 유튜브 카테고리 교차 확인: 채널 영상 다수가 음악·스포츠·게임·뉴스처럼 뚜렷한 카테고리인데 분류 분야와 다르면 제외
+    const [cat, nc] = top(rs, r => r.v.category || ''), strong = { '10': 'music', '17': 'sports', '20': 'gaming', '25': 'news' };
+    if (strong[cat] && strong[cat] !== tp && nc / rs.length >= 0.6) continue;
+    const inT = rs.filter(r => r.tp === tp);
+    cands.push({ topic: tp, sub: top(inT, r => r.sb || '')[0], channel_title: rs[0].v.channel || '', channel_id: id,
+      lang: top(rs, r => r.v.lang || 'ko')[0], enabled: '1', added: today, last_video: last[id] || '', subs: String(subs), _n: n, _s: subs });
+  }
+  // 영상이 많이 맞은 채널 먼저, 같으면 작은 채널 먼저 (피드 바깥 쪽으로)
+  cands.sort((a, b) => b._n - a._n || a._s - b._s);
+  const added = [], addedToday = kept.filter(r => r.added === today).length;   // 같은 날 여러 번 돌아도 하루 상한 유지
+  for (const c of cands) {
+    if (active.length + added.length >= MAX || addedToday + added.length >= DAILY) break;
+    if ((perTopic[c.topic] || 0) >= PER_T) continue;
+    perTopic[c.topic] = (perTopic[c.topic] || 0) + 1; added.push(c);
+  }
+  const out = [...kept, ...added];
+  fs.writeFileSync(AUTO_FILE, [AUTO_HEAD.join(','), ...out.map(r => AUTO_HEAD.map(h => csvCell(r[h])).join(','))].join('\n') + '\n');
+  console.log(`자동 구독 채널: ${out.filter(r => r.enabled !== '0').length}개 (오늘 +${added.length}, 30일 새 영상 없어 제외 ${removed.length}, 후보 ${cands.length})`);
+}
+
 // ---------- main ----------
 function main() {
   fs.writeFileSync(path.join(__dirname, 'queries.json'), JSON.stringify(buildQueries(), null, 0));
@@ -91,12 +163,14 @@ function main() {
   raw.videos.forEach(v => { v.title = unesc(v.title); v.channel = unesc(v.channel); });
   // 채널 구독자 수: 알면 5천 미만 채널의 검색 영상 제외 (뉴스·정치는 5만 미만 제외)
   let stats = {}; try { stats = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'channel_stats.json'), 'utf8')); } catch (e) {}
-  const listed = new Set(fs.readFileSync(path.join(__dirname, 'channels.csv'), 'utf8').split('\n').map(l => l.split(',')[4]).filter(Boolean));
+  const listed = new Set(readCsv(path.join(__dirname, 'channels.csv')).map(r => r.channel_id).filter(Boolean));
   const CLICKBAIT = /ㄷㄷ|ㅋㅋ|충격|경악|발칵|난리|미친|미칠|소름|폭로|참교육|사이다|박살|역대급|초비상|대참사|긴급|속보\s*[!]|[!?]{2,}|…\s*$|\.\.\.?\s*$|이유\?$|결국\s/;
   // 영어: 5글자 이상 전부 대문자 단어(FLEES, SHOCKING 등), 자극어
   const CLICKBAIT_EN = /\b(shocking|insane|destroyed|exposed|meltdown|wild|humiliat\w*|panic\w*|flees?)\b|!\s*$/i;
   const CAPS_WORD = /\b[A-Z]{5,}\b/;
   const qualityOk = r => {
+    // 자동 구독 채널의 RSS 영상: 채널은 이미 검증됐으니 뉴스 자극적 제목만 거른다
+    if (r.v.src === 'rss' && r.v.auto) return !(r.tp === 'news' && (CLICKBAIT.test(r.v.title || '') || (r.v.lang === 'global' && (CAPS_WORD.test(r.v.title || '') || CLICKBAIT_EN.test(r.v.title || '')))));
     if (r.v.src !== 'search') return true;
     const subs = (stats[r.v.channel_id] || {}).subs, isNews = r.tp === 'news';
     if (listed.has(r.v.channel_id)) return true;
@@ -111,6 +185,7 @@ function main() {
   const scored = raw.videos.filter(okSearch).map(v => ({ v, ...topicOf(v), f: formatOf(v) }));
   const rows = scored.filter(r => r.tp !== C.UNKNOWN && qualityOk(r));
   console.log('검색 영상 제외 — 분야 불일치:', scored.filter(r => r.how === 'search_mismatch').length, '· 품질 기준 미달:', scored.filter(r => r.tp !== C.UNKNOWN && !qualityOk(r)).length);
+  updateAutoChannels(rows, raw, stats, listed);
 
   // 분야당 최대 PER_TOPIC개, 세부 분야별 균형 (최근·조회수 우선)
   const PER_TOPIC = +(process.env.PER_TOPIC || 650), picked = [];
@@ -131,7 +206,7 @@ function main() {
   const videos = picked.map(r => {
     const key = r.v.channel_id || r.v.channel;
     if (!chIndex.has(key)) { chIndex.set(key, channels.length); channels.push({ channel_id: r.v.channel_id || '', title: r.v.channel || '', topic: r.tp, sub: r.sb, lang: r.v.lang || 'ko' }); }
-    return { id: r.v.id, t: r.v.title, c: chIndex.get(key), d: r.v.published || r.v.first_seen, v: r.v.views || 0, f: r.f, tp: r.tp, sb: r.sb, lg: r.v.lang || 'ko', s: r.v.src };
+    return { id: r.v.id, t: r.v.title, c: chIndex.get(key), d: r.v.published || r.v.first_seen, v: r.v.views || 0, f: r.f, tp: r.tp, sb: r.sb, lg: r.v.lang || 'ko', s: r.v.auto ? 'auto' : r.v.src };
   });
   const pool = { generated_at: raw.generated_at, source: 'youtube_rss+data_api', channels, videos };
   fs.writeFileSync(path.join(ROOT, 'docs', 'videos.js'), 'window.OTF_VIDEO_POOL=' + JSON.stringify(pool) + ';\n');

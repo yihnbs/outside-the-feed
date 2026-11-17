@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHANNELS = os.path.join(ROOT, 'collect', 'channels.csv')
+AUTO_CHANNELS = os.path.join(ROOT, 'collect', 'auto_channels.csv')   # 검색으로 발견해 자동으로 따라가는 채널 (build_pool.js가 관리)
 QUERIES = os.path.join(ROOT, 'collect', 'queries.json')       # build_pool.js 가 분류 체계에서 생성
 RAW = os.path.join(ROOT, 'data', 'raw_pool.json')
 CH_STATS = os.path.join(ROOT, 'data', 'channel_stats.json')     # 채널 구독자 수 캐시 (14일마다 갱신)
@@ -57,7 +58,8 @@ def rss(channel):
                 out.append({'id': vid, 'title': e.findtext('a:title', '', NS), 'desc': (e.findtext('media:group/media:description', '', NS) or '')[:400],
                             'channel': channel['channel_title'], 'channel_id': channel['channel_id'], 'published': (e.findtext('a:published', '', NS) or '')[:10],
                             'views': int(stt.get('views', 0)) if stt is not None else 0, 'shorts': kind == 'shorts',
-                            'src': 'rss', 'prior_topic': channel['topic'], 'prior_sub': channel['sub'], 'lang': (channel.get('lang') or 'ko').strip()})
+                            'src': 'rss', 'prior_topic': channel['topic'], 'prior_sub': channel['sub'], 'lang': (channel.get('lang') or 'ko').strip(),
+                            'auto': bool(channel.get('auto'))})
     time.sleep(0.2)
     return out
 
@@ -89,7 +91,7 @@ def search_all():
     after = (NOW - timedelta(days=SEARCH_WINDOW_DAYS)).strftime('%Y-%m-%dT%H:%M:%SZ')
     for i, q in enumerate(todays_queries()):
         params = dict(part='snippet', type='video', maxResults=50, q=q['q'], publishedAfter=after, safeSearch='moderate',
-                      order=('date' if i % 3 == 2 else 'relevance'))                    # 인기 편향 완화: 1/3은 최신순
+                      order=('date' if i % 2 == 1 else 'relevance'))                    # 인기 편향 완화: 절반은 최신순
         if q.get('lang') == 'global':
             params.update(relevanceLanguage='en')
         else:
@@ -145,7 +147,7 @@ def enrich(videos):
                 v['lang'] = 'global'
     return calls
 
-def channel_stats(store):
+def channel_stats(store, extra_ids=()):
     """검색으로 들어온 영상의 채널 구독자 수 (channels.list: 50개당 1단위). 14일 지난 것만 다시 조회."""
     try:
         cache = json.load(open(CH_STATS, encoding='utf-8'))
@@ -154,8 +156,8 @@ def channel_stats(store):
     if not KEY:
         return cache, 0
     stale = (NOW - timedelta(days=14)).strftime('%Y-%m-%d')
-    need = sorted({v['channel_id'] for v in store.values() if v.get('src') == 'search' and v.get('channel_id')
-                   and cache.get(v['channel_id'], {}).get('fetched', '') < stale})[:40 * 50]
+    ids = {v['channel_id'] for v in store.values() if v.get('src') == 'search' and v.get('channel_id')} | set(extra_ids)
+    need = sorted(i for i in ids if cache.get(i, {}).get('fetched', '') < stale)[:40 * 50]
     calls = 0
     for i in range(0, len(need), 50):
         data, err = api('channels', part='statistics', id=','.join(need[i:i + 50]), maxResults=50)
@@ -172,9 +174,14 @@ def channel_stats(store):
 
 def main():
     chans = [r for r in csv.DictReader(open(CHANNELS, encoding='utf-8-sig')) if (r.get('enabled') or '1').strip() != '0']
+    listed = {r['channel_id'] for r in chans}
+    auto = []
+    if os.path.exists(AUTO_CHANNELS):
+        auto = [{**r, 'auto': True} for r in csv.DictReader(open(AUTO_CHANNELS, encoding='utf-8-sig'))
+                if (r.get('enabled') or '1').strip() != '0' and r.get('channel_id') and r['channel_id'] not in listed]
     with ThreadPoolExecutor(8) as ex:
-        rss_items = [v for chunk in ex.map(rss, chans) for v in chunk]
-    print(f'RSS: 채널 {len(chans)}개 → 영상 {len(rss_items)}개')
+        rss_items = [v for chunk in ex.map(rss, chans + auto) for v in chunk]
+    print(f'RSS: 채널 {len(chans)}개 + 자동 구독 {len(auto)}개 → 영상 {len(rss_items)}개')
 
     searched, used, stop = ({}, 0, 'no_key') if not KEY else search_all()
     calls = enrich(searched) if searched else 0
@@ -193,7 +200,7 @@ def main():
         store[v['id']] = merged
     cutoff = (NOW - timedelta(days=KEEP_DAYS)).strftime('%Y-%m-%d')
     keep = [v for v in store.values() if (v.get('published') or v.get('first_seen', today)) >= cutoff]
-    _, ch_calls = channel_stats({v['id']: v for v in keep})
+    _, ch_calls = channel_stats({v['id']: v for v in keep}, [r['channel_id'] for r in auto])
     print(f'채널 구독자 수 조회: {ch_calls}회')
     os.makedirs(os.path.dirname(RAW), exist_ok=True)
     json.dump({'generated_at': NOW.strftime('%Y-%m-%dT%H:%MZ'), 'search_calls': used, 'search_stop': stop, 'videos': keep},
