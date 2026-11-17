@@ -62,7 +62,22 @@ function main() {
   if (!fs.existsSync(rawPath)) { console.log('raw_pool.json 없음 — queries.json만 생성'); return; }
   const raw = JSON.parse(fs.readFileSync(rawPath, 'utf8'));
   const now = Date.now(), age = d => Math.max(0, (now - Date.parse(d || '2000-01-01')) / 864e5);
-  const rows = raw.videos.map(v => ({ v, ...topicOf(v), f: formatOf(v) })).filter(r => r.tp !== C.UNKNOWN);
+  const unesc = s => String(s || '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  // 검색으로 들어온 영상 품질 필터: 조회수 3,000 미만 제외, 해외는 영어 영상만
+  const MIN_VIEWS = +(process.env.MIN_VIEWS || 3000);
+  const okSearch = v => {
+    if (v.src !== 'search') return true;
+    if ((v.views || 0) < MIN_VIEWS) return false;
+    if (v.lang === 'global') {
+      const al = (v.audio_lang || '').toLowerCase();
+      if (al) return al.startsWith('en');
+      const t = (v.title || '').replace(/[#@][^\s]+/g, '');
+      return /^[\x00-\x7F\u2000-\u2BFF\uFE00-\uFFFF\u{1F000}-\u{1FAFF}]*$/u.test(t);   // 라틴 문자·기호·이모지만
+    }
+    return true;
+  };
+  raw.videos.forEach(v => { v.title = unesc(v.title); v.channel = unesc(v.channel); });
+  const rows = raw.videos.filter(okSearch).map(v => ({ v, ...topicOf(v), f: formatOf(v) })).filter(r => r.tp !== C.UNKNOWN);
 
   // 분야당 최대 PER_TOPIC개, 세부 분야별 균형 (최근·조회수 우선)
   const PER_TOPIC = +(process.env.PER_TOPIC || 650), picked = [];

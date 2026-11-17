@@ -7,7 +7,7 @@
 
   YOUTUBE_API_KEY=... python3 collect/collect_videos.py     # 키가 없으면 RSS만 수집
 """
-import csv, json, os, re, sys, time, urllib.parse, urllib.request, urllib.error
+import csv, html, json, os, re, sys, time, urllib.parse, urllib.request, urllib.error
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -107,7 +107,7 @@ def search_all():
             sn = it.get('snippet', {})
             if not vid or sn.get('liveBroadcastContent') in ('live', 'upcoming'):
                 continue
-            found.setdefault(vid, {'id': vid, 'title': sn.get('title', ''), 'channel': sn.get('channelTitle', ''), 'channel_id': sn.get('channelId', ''),
+            found.setdefault(vid, {'id': vid, 'title': html.unescape(sn.get('title', '')), 'channel': html.unescape(sn.get('channelTitle', '')), 'channel_id': sn.get('channelId', ''),
                                    'published': sn.get('publishedAt', '')[:10], 'src': 'search', 'prior_topic': q['topic'], 'prior_sub': q['sub'],
                                    'lang': q.get('lang', 'ko'), 'query': q['q']})
     return found, used, stop
@@ -137,6 +137,7 @@ def enrich(videos):
                      duration=secs, views=int(stt.get('viewCount', 0) or 0),
                      shorts=bool(secs and (secs <= 60 or (secs <= 180 and '#shorts' in text))))
             lang = (sn.get('defaultAudioLanguage') or sn.get('defaultLanguage') or '').lower()
+            v['audio_lang'] = lang
             if lang.startswith('ko') or re.search('[가-힣]', sn.get('title', '')):
                 v['lang'] = 'ko'
             elif lang:
