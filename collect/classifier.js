@@ -12,13 +12,13 @@ const TAXONOMY=[
 {id:'entertainment',label:'예능·엔터',yt:'Entertainment · Comedy · Film',subs:{
 '예능':['예능','런닝맨','무한도전','나혼자산다','나 혼자 산다','놀면 뭐하니','1박2일','신서유기','지구오락실','유퀴즈','라디오스타','아는형님','전참시','미우새','짠한형','핑계고','뜬뜬','채널십오야','십오야','워크맨','문명특급','피식대학','숏박스','코미디','comedy','개그','콩트','sketch','몰카','prank','챌린지','challenge','밈','meme','웃긴','funny'],
 '연예인':['연예','연예인','배우','셀럽','celeb','시상식','레드카펫','화보','비하인드','behind','팬미팅'],
-'영화·드라마':['영화','movie','film','예고편','trailer','결말','줄거리','넷플릭스','netflix','디즈니플러스','티빙','tving','쿠팡플레이','드라마','drama','시트콤','애니메이션','애니','anime','웹툰'],
+'영화·드라마':['영화','movie','film','예고편','trailer','결말','줄거리','넷플릭스','netflix','디즈니플러스','티빙','tving','쿠팡플레이','드라마','drama','시트콤','애니메이션','애니','anime','웹툰','애니박스','anibox','치이카와','먼작귀','하치와레','짱구','포켓몬스터'],
 '스트리머':['유튜버','스트리머','침착맨','리액션?','reaction?']}},
 {id:'news',label:'뉴스·정치',yt:'News & Politics',subs:{
 '뉴스 보도':['뉴스','news','조선일보','속보','breaking','단독?','앵커','jtbc news','jtbc뉴스','ytn','연합뉴스','mbn뉴스','뉴스룸','뉴스데스크','기자','보도','cnn','bbc','reuters'],
 '정치':['정치','politics','국회','대통령','president','대선','총선','선거','election','여당','야당','민주당','국민의힘','장관?','탄핵','청문회','정부','정책','외교','white house'],
 '국제':['국제','전쟁?','war?','우크라이나','ukraine','러시아','russia','이스라엘','israel','가자지구','gaza','북한','north korea','중동'],
-'사회':['사회?','사건','사고?','재판','판결','검찰','경찰','시사','pd수첩','그것이 알고싶다','그알','추적60분','시사기획']}},
+'사회':['사회?','사건','사고?','재판','판결','검찰','경찰','시사?','pd수첩','그것이 알고싶다','그알','추적60분','시사기획']}},
 {id:'economy',label:'경제·재테크',yt:'News & Politics · Education',subs:{
 '투자':['주식','투자','증시','코스피','코스닥','나스닥','nasdaq','s&p','etf','배당','매수','매도','코인','비트코인','bitcoin','crypto','이더리움','stock','stocks','investing','trading'],
 '거시경제·시장':['경제','economy','economics','금리','환율','인플레이션','inflation','물가','연준','fed','한국은행','gdp','경기침체','recession','관세','tariff','슈카','삼프로','머니인사이드','월급쟁이부자들'],
@@ -45,7 +45,7 @@ const TAXONOMY=[
 '미술·디자인':['미술','art?','그림','drawing','painting','일러스트','illustration','전시','exhibition','미술관','museum','박물관','디자인?','design?','건축','architecture','사진','photography','작품'],
 '공연':['뮤지컬','musical','연극','theater','theatre','오페라','opera','발레','ballet','현대무용']}},
 {id:'sports',label:'스포츠',yt:'Sports',subs:{
-'야구':['야구','kbo','mlb','라이온즈','lions','타이거즈','트윈스','베어스','자이언츠','랜더스','이글스','다이노스','히어로즈','kt wiz','한국시리즈','홈런','home run','homerun','투수','타자','피칭','pitching','오타니','ohtani','이정후','김하성','최강야구','다저스','dodgers','yankees','양키스','불펜','구단주','이재희','ks4'],
+'야구':['야구','kbo','mlb','라이온즈','lions','타이거즈','트윈스','베어스','자이언츠','랜더스','이글스','다이노스','히어로즈','kt wiz','한국시리즈','코시','홈런','home run','homerun','투수','타자','피칭','pitching','오타니','ohtani','이정후','김하성','최강야구','다저스','dodgers','yankees','양키스','불펜','구단주','이재희','ks4'],
 '축구':['축구','soccer','football','손흥민','프리미어리그','premier league','epl','챔피언스리그','champions league','라리가','분데스리가','k리그','월드컵','world cup','토트넘','tottenham','맨유','맨시티','리버풀','liverpool','아스날','arsenal','바르셀로나','이강인','김민재'],
 '농구':['농구','nba','kbl','basketball','르브론'],
 '골프·라켓':['골프','golf','테니스','tennis','배드민턴','badminton','탁구','볼링'],
@@ -55,7 +55,7 @@ const TAXONOMY=[
 '롤·e스포츠':['롤드컵','리그오브레전드','리그 오브 레전드','league of legends','lck','t1','페이커','faker','e스포츠','esports','이스포츠','솔랭','풍월량','우왁굳',' 롤 '],
 '게임 일반':['게임','game','games','gaming','gameplay','공략','walkthrough','마인크래프트','minecraft','배그','배틀그라운드','pubg','발로란트','valorant','오버워치','overwatch','메이플스토리','메이플','로스트아크','fc온라인','fifa','포켓몬','pokemon','pokémon','닌텐도','nintendo','플스','ps5','playstation','xbox','젤다','zelda','엘든링','elden ring','스타크래프트','starcraft','인디게임','indie game','speedrun','스피드런','고전게임']}},
 {id:'history',label:'역사·교양',yt:'Education',subs:{
-'역사':['역사','history','한국사','세계사','조선','고려','삼국','왕조','전쟁사','고대사','고대 문명','ancient','민주화운동','중세','medieval','로마','roman','이집트','egypt','고고학','archaeology','문명','civilization','일제강점기','근현대사','썬킴','벌거벗은 세계사','설민석','큰별쌤','최태성'],
+'역사':['역사','history','한국사','세계사','조선','고려','삼국','왕조?','전쟁사','고대사','고대 문명','ancient','민주화운동','중세','medieval','로마','roman','이집트','egypt','고고학','archaeology','문명','civilization','일제강점기','근현대사','썬킴','벌거벗은 세계사','설민석','큰별쌤','최태성'],
 '철학·심리':['철학','philosophy','심리학','psychology','인문학','humanities','니체','nietzsche','칸트','소크라테스','스토아','stoic'],
 '사회·도시':['도시?','도시계획','urban','인구?','저출산','지방소멸','젠트리피케이션','사회학','sociology','인류학','anthropology'],
 '강의·학습':['강의','lecture','강연','ted','tedx','세바시','교양?','지식?','공부법','영어공부','영어 공부','영어회화','영어 회화','learn english','토익','toeic','수능','일본어','중국어','language learning']}},
@@ -84,11 +84,12 @@ if(hits&&k.topic){const add=Math.min(hits,2)*weight*k.w;scores[k.topic]=(scores[
 const classifyCache=new Map();
 function classifyText(title,channel){
 const key=title+'\u0001'+channel;if(classifyCache.has(key))return classifyCache.get(key);
-const scores={},subScores={};scoreText(title,1,scores,subScores);scoreText(channel,2,scores,subScores);
+const scores={},subScores={},titleScores={};scoreText(title,1,titleScores,{});scoreText(title,1,scores,subScores);scoreText(channel,2,scores,subScores);
 const ranked=Object.entries(scores).sort((a,b)=>b[1]-a[1]);let out;
 if(!ranked.length)out={topic:UNKNOWN,sub:'',method:'none',candidates:[],score:0,scores};
 else{const best=ranked[0][1],tied=ranked.filter(r=>r[1]===best).map(r=>r[0]);
-const topic=tied.length===1?tied[0]:tied.sort((a,b)=>TOPIC_IDS.indexOf(a)-TOPIC_IDS.indexOf(b))[0];
+// 동점이면 제목 근거가 더 큰 쪽 → 그래도 같으면 분류 체계 순서
+const topic=tied.length===1?tied[0]:tied.sort((a,b)=>(titleScores[b]||0)-(titleScores[a]||0)||TOPIC_IDS.indexOf(a)-TOPIC_IDS.indexOf(b))[0];
 const sub=Object.entries(subScores).filter(([k])=>k.startsWith(topic+'|')).sort((a,b)=>b[1]-a[1])[0]?.[0].split('|')[1]||'';
 out={topic,sub,method:tied.length>1?'tie':'keyword',candidates:tied,score:best,scores};}
 classifyCache.set(key,out);return out;
