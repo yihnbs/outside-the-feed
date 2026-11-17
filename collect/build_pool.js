@@ -120,6 +120,8 @@ function updateAutoChannels(rows, raw, stats, listed) {
     const [tp, n] = top(rs, r => r.tp), subs = (stats[id] || {}).subs;
     if (n < 2 || n / rs.length < 0.6 || subs == null || subs < (tp === 'news' ? 50000 : 5000)) continue;
     // 유튜브 카테고리 교차 확인: 채널 영상 다수가 음악·스포츠·게임·뉴스처럼 뚜렷한 카테고리인데 분류 분야와 다르면 제외
+    // 해외 채널인데 채널명에 라틴 문자 외의 글자(벵골어·아랍어 등)가 있으면 제외 (한글은 허용)
+    if (top(rs, r => r.v.lang || 'ko')[0] === 'global' && /(?![\p{Script=Latin}\p{Script=Hangul}])\p{L}/u.test(rs[0].v.channel || '')) continue;
     const [cat, nc] = top(rs, r => r.v.category || ''), strong = { '10': 'music', '17': 'sports', '20': 'gaming', '25': 'news' };
     if (strong[cat] && strong[cat] !== tp && nc / rs.length >= 0.6) continue;
     const inT = rs.filter(r => r.tp === tp);
