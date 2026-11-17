@@ -1,0 +1,61 @@
+name: 영상 풀 수집 및 배포
+
+on:
+  schedule:
+    - cron: '7 21 * * *'      # 매일 06:07 KST (UTC 21:07)
+  workflow_dispatch:           # Actions 탭에서 수동 실행
+  push:
+    branches: [main]
+    paths: ['docs/**', 'collect/**', '.github/workflows/**']
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: collect-and-deploy
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: 검색어 목록 갱신
+        run: node collect/build_pool.js
+      - name: 수집 (RSS + YouTube Data API)
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: python collect/collect_videos.py
+      - name: 영상 단위 분류 → docs/videos.js
+        run: node collect/build_pool.js
+      - name: 변경 사항 커밋
+        run: |
+          git config user.name  "outside-the-feed-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/videos.js data/raw_pool.json collect/queries.json
+          git diff --cached --quiet || git commit -m "영상 풀 갱신 $(date -u +%Y-%m-%d)"
+          git push
+
+  deploy:
+    needs: [collect]
+    if: always() && (needs.collect.result == 'success' || needs.collect.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main }
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: docs }
+      - id: deployment
+        uses: actions/deploy-pages@v4
