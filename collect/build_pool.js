@@ -10,16 +10,18 @@ const C = new Function(fs.readFileSync(path.join(__dirname, 'classifier.js'), 'u
 
 // ---------- 검색어 목록 (분류 체계 → 회전 검색) ----------
 function buildQueries() {
+  // 세부 분야마다 구체적인 검색어(query_seeds.json). 없으면 3글자 이상 키워드로 대체
+  const seeds = JSON.parse(fs.readFileSync(path.join(__dirname, 'query_seeds.json'), 'utf8'));
   const out = [], durations = ['', 'medium', 'short', 'long'];
   let n = 0;
   for (const t of C.TAXONOMY) for (const [sub, list] of Object.entries(t.subs)) {
-    const clean = list.filter(k => !k.endsWith('?')).map(k => k.trim());
-    const ko = clean.filter(k => /[가-힣]/.test(k) && k.length >= 2).slice(0, 4);
-    const en = clean.filter(k => /^[a-z0-9 &'.-]+$/i.test(k) && k.length >= 4).slice(0, 1);
-    for (const q of ko) out.push({ q, topic: t.id, sub, lang: 'ko', duration: durations[n++ % 4] });
-    for (const q of en) out.push({ q, topic: t.id, sub, lang: 'global', duration: '' });
+    const fallback = list.filter(k => !k.endsWith('?') && /[가-힣]/.test(k) && k.length >= 3).slice(0, 3);
+    const qs = seeds[t.id + '|' + sub] || fallback;
+    for (const q of qs) {
+      const latin = /^[\x00-\x7F]+$/.test(q);
+      out.push({ q, topic: t.id, sub, lang: latin ? 'global' : 'ko', duration: latin ? '' : durations[n++ % 4] });
+    }
   }
-  // 분야가 섞이도록 고르게 섞기 (고정 시드)
   let seed = 7; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
   for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; }
   return out;
@@ -43,15 +45,25 @@ function formatOf(v) {
 // ---------- 분야 (영상 단위) ----------
 const CATEGORY_PRIOR = { '10': 'music', '17': 'sports', '20': 'gaming', '25': 'news', '19': 'travel', '28': 'science', '2': 'science',
   '24': 'entertainment', '23': 'entertainment', '1': 'entertainment', '27': 'history', '15': 'health', '26': 'health' };
+const hashtags = d => ((d || '').match(/#[^\s#]+/g) || []).slice(0, 10).join(' ');
 function topicOf(v) {
-  const text = (v.title || '') + ' ' + (v.tags || []).join(' ');
-  // 채널 RSS 영상은 채널 분야가 이미 있으니 채널명 키워드는 빼고 제목·태그만 본다
+  const text = (v.title || '') + ' ' + (v.tags || []).join(' ') + ' ' + hashtags(v.desc);
+  // 채널 RSS 영상은 채널 분야가 이미 있으니 채널명 키워드는 빼고 제목·태그·해시태그만 본다
   const c = C.classifyText(text, v.src === 'rss' ? '' : (v.channel || ''));
   const prior = v.prior_topic || CATEGORY_PRIOR[v.category] || C.UNKNOWN;
-  if (c.method === 'none') return { tp: prior, sb: v.prior_sub || '', how: v.prior_topic ? (v.src === 'search' ? 'query' : 'channel') : 'category' };
+  const priorEvidence = (c.scores[prior] || 0) >= 1;   // 약한 키워드(0.5) 하나로는 근거로 안 침
+  if (v.src === 'search') {
+    // 검색 영상은 '검색한 분야와 내용이 맞는지' 확인: 근거가 없으면 버린다
+    if (c.score >= 1 && c.topic === prior) return { tp: prior, sb: c.sub || v.prior_sub || '', how: 'video' };
+    if (c.method !== 'none' && c.score >= 2 && !priorEvidence) return { tp: c.topic, sb: c.sub || '', how: 'video_override' };
+    if (priorEvidence) return { tp: prior, sb: v.prior_sub || '', how: 'prior_kept' };
+    if (CATEGORY_PRIOR[v.category] === prior && (c.method === 'none' || c.topic === prior)) return { tp: prior, sb: v.prior_sub || '', how: 'query+category' };
+    return { tp: C.UNKNOWN, how: 'search_mismatch' };
+  }
+  if (c.method === 'none') return { tp: prior, sb: v.prior_sub || '', how: v.prior_topic ? 'channel' : 'category' };
   if (c.topic === prior) return { tp: prior, sb: c.sub || v.prior_sub || '', how: 'video' };
-  // 채널/검색어 분야와 다를 때: 신호가 약하거나(점수<2) 기존 분야에도 근거가 있으면 기존 분야 유지
-  if (prior !== C.UNKNOWN && (c.score < 2 || (c.scores[prior] || 0) > 0)) return { tp: prior, sb: v.prior_sub || '', how: 'prior_kept' };
+  // 채널 분야와 다를 때: 신호가 약하거나(점수<2) 채널 분야에도 근거가 있으면 채널 분야 유지
+  if (prior !== C.UNKNOWN && (c.score < 2 || priorEvidence)) return { tp: prior, sb: v.prior_sub || '', how: 'prior_kept' };
   return { tp: c.topic, sb: c.sub || '', how: 'video_override' };
 }
 
@@ -77,7 +89,24 @@ function main() {
     return true;
   };
   raw.videos.forEach(v => { v.title = unesc(v.title); v.channel = unesc(v.channel); });
-  const rows = raw.videos.filter(okSearch).map(v => ({ v, ...topicOf(v), f: formatOf(v) })).filter(r => r.tp !== C.UNKNOWN);
+  // 채널 구독자 수: 알면 5천 미만 채널의 검색 영상 제외 (뉴스·정치는 5만 미만 제외)
+  let stats = {}; try { stats = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'channel_stats.json'), 'utf8')); } catch (e) {}
+  const listed = new Set(fs.readFileSync(path.join(__dirname, 'channels.csv'), 'utf8').split('\n').map(l => l.split(',')[4]).filter(Boolean));
+  const CLICKBAIT = /ㄷㄷ|ㅋㅋ|충격|경악|발칵|난리|미친|미칠|소름|폭로|참교육|사이다|박살|역대급|초비상|대참사|긴급|속보\s*[!]|[!?]{2,}|…\s*$|\.\.\.?\s*$|이유\?$|결국\s/;
+  const qualityOk = r => {
+    if (r.v.src !== 'search') return true;
+    const subs = (stats[r.v.channel_id] || {}).subs, isNews = r.tp === 'news';
+    if (listed.has(r.v.channel_id)) return true;
+    if (isNews) {
+      if (CLICKBAIT.test(r.v.title || '')) return false;
+      if (subs != null) return subs >= 50000;
+      return (r.v.views || 0) >= 20000;                 // 구독자 수를 아직 모르면 조회수로 대신
+    }
+    return subs == null || subs >= 5000;
+  };
+  const scored = raw.videos.filter(okSearch).map(v => ({ v, ...topicOf(v), f: formatOf(v) }));
+  const rows = scored.filter(r => r.tp !== C.UNKNOWN && qualityOk(r));
+  console.log('검색 영상 제외 — 분야 불일치:', scored.filter(r => r.how === 'search_mismatch').length, '· 품질 기준 미달:', scored.filter(r => r.tp !== C.UNKNOWN && !qualityOk(r)).length);
 
   // 분야당 최대 PER_TOPIC개, 세부 분야별 균형 (최근·조회수 우선)
   const PER_TOPIC = +(process.env.PER_TOPIC || 650), picked = [];

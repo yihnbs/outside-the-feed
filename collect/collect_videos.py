@@ -16,6 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CHANNELS = os.path.join(ROOT, 'collect', 'channels.csv')
 QUERIES = os.path.join(ROOT, 'collect', 'queries.json')       # build_pool.js 가 분류 체계에서 생성
 RAW = os.path.join(ROOT, 'data', 'raw_pool.json')
+CH_STATS = os.path.join(ROOT, 'data', 'channel_stats.json')     # 채널 구독자 수 캐시 (14일마다 갱신)
 KEY = os.environ.get('YOUTUBE_API_KEY', '').strip()
 SEARCH_LIMIT = int(os.environ.get('SEARCH_LIMIT', '90'))      # 기본 할당량 100회/일 중 여유 10회
 KEEP_DAYS = int(os.environ.get('KEEP_DAYS', '60'))
@@ -144,6 +145,31 @@ def enrich(videos):
                 v['lang'] = 'global'
     return calls
 
+def channel_stats(store):
+    """검색으로 들어온 영상의 채널 구독자 수 (channels.list: 50개당 1단위). 14일 지난 것만 다시 조회."""
+    try:
+        cache = json.load(open(CH_STATS, encoding='utf-8'))
+    except (FileNotFoundError, json.JSONDecodeError):
+        cache = {}
+    if not KEY:
+        return cache, 0
+    stale = (NOW - timedelta(days=14)).strftime('%Y-%m-%d')
+    need = sorted({v['channel_id'] for v in store.values() if v.get('src') == 'search' and v.get('channel_id')
+                   and cache.get(v['channel_id'], {}).get('fetched', '') < stale})[:40 * 50]
+    calls = 0
+    for i in range(0, len(need), 50):
+        data, err = api('channels', part='statistics', id=','.join(need[i:i + 50]), maxResults=50)
+        calls += 1
+        if err:
+            print('channels.list 오류:', err)
+            break
+        for it in data.get('items', []):
+            st = it.get('statistics', {})
+            cache[it['id']] = {'subs': None if st.get('hiddenSubscriberCount') else int(st.get('subscriberCount', 0) or 0),
+                               'videos': int(st.get('videoCount', 0) or 0), 'fetched': NOW.strftime('%Y-%m-%d')}
+    json.dump(cache, open(CH_STATS, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))
+    return cache, calls
+
 def main():
     chans = [r for r in csv.DictReader(open(CHANNELS, encoding='utf-8-sig')) if (r.get('enabled') or '1').strip() != '0']
     with ThreadPoolExecutor(8) as ex:
@@ -167,6 +193,8 @@ def main():
         store[v['id']] = merged
     cutoff = (NOW - timedelta(days=KEEP_DAYS)).strftime('%Y-%m-%d')
     keep = [v for v in store.values() if (v.get('published') or v.get('first_seen', today)) >= cutoff]
+    _, ch_calls = channel_stats({v['id']: v for v in keep})
+    print(f'채널 구독자 수 조회: {ch_calls}회')
     os.makedirs(os.path.dirname(RAW), exist_ok=True)
     json.dump({'generated_at': NOW.strftime('%Y-%m-%dT%H:%MZ'), 'search_calls': used, 'search_stop': stop, 'videos': keep},
               open(RAW, 'w', encoding='utf-8'), ensure_ascii=False, separators=(',', ':'))

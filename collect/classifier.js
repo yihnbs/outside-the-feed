@@ -17,8 +17,8 @@ const TAXONOMY=[
 {id:'news',label:'뉴스·정치',yt:'News & Politics',subs:{
 '뉴스 보도':['뉴스','news','조선일보','속보','breaking','단독?','앵커','jtbc news','jtbc뉴스','ytn','연합뉴스','mbn뉴스','뉴스룸','뉴스데스크','기자','보도','cnn','bbc','reuters'],
 '정치':['정치','politics','국회','대통령','president','대선','총선','선거','election','여당','야당','민주당','국민의힘','장관?','탄핵','청문회','정부','정책','외교','white house'],
-'국제':['국제','전쟁','war','우크라이나','ukraine','러시아','russia','이스라엘','israel','가자지구','gaza','북한','north korea','중동'],
-'사회':['사회','사건','사고?','재판','판결','검찰','경찰','시사','pd수첩','그것이 알고싶다','그알','추적60분','시사기획']}},
+'국제':['국제','전쟁?','war?','우크라이나','ukraine','러시아','russia','이스라엘','israel','가자지구','gaza','북한','north korea','중동'],
+'사회':['사회?','사건','사고?','재판','판결','검찰','경찰','시사','pd수첩','그것이 알고싶다','그알','추적60분','시사기획']}},
 {id:'economy',label:'경제·재테크',yt:'News & Politics · Education',subs:{
 '투자':['주식','투자','증시','코스피','코스닥','나스닥','nasdaq','s&p','etf','배당','매수','매도','코인','비트코인','bitcoin','crypto','이더리움','stock','stocks','investing','trading'],
 '거시경제·시장':['경제','economy','economics','금리','환율','인플레이션','inflation','물가','연준','fed','한국은행','gdp','경기침체','recession','관세','tariff','슈카','삼프로','머니인사이드','월급쟁이부자들'],
@@ -67,7 +67,7 @@ const TAXONOMY=[
 '반려동물':['강아지','dog','dogs','고양이','cat?','cats','반려견','반려묘','반려동물','pet?','pets','동물','animal','animals','댕댕이','냥이','동물농장','애니멀','애니멀봐']}}
 ];
 // Compounds consumed before shorter keywords so they don't score (e.g. 책상, 화장실, 의사결정).
-const STOP_PHRASES=['화장실','의사결정','의사소통','배우기','배우는','배우고','배워','헤어지','사상최대','사상 최대','사회자','경기도','정리','청소년','역사상','eng sub','english sub','kor sub'];
+const STOP_PHRASES=['사회생활','사회성','사고방식','사고력','화장실','의사결정','의사소통','배우기','배우는','배우고','배워','헤어지','사상최대','사상 최대','사회자','경기도','정리','청소년','역사상','eng sub','english sub','kor sub'];
 const TOPIC_IDS=TAXONOMY.map(t=>t.id),UNKNOWN='unknown';
 const TOPIC_BY_ID=Object.fromEntries(TAXONOMY.map(t=>[t.id,t]));
 const KEYWORDS=(()=>{const seen=new Map();for(const t of TAXONOMY)for(const[sub,list]of Object.entries(t.subs))for(const raw of list){const weak=raw.endsWith('?'),kw=(weak?raw.slice(0,-1):raw).toLowerCase();if(!seen.has(kw))seen.set(kw,{kw,topic:t.id,sub,w:weak?.5:1})}
