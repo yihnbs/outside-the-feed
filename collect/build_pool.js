@@ -93,12 +93,16 @@ function main() {
   let stats = {}; try { stats = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'channel_stats.json'), 'utf8')); } catch (e) {}
   const listed = new Set(fs.readFileSync(path.join(__dirname, 'channels.csv'), 'utf8').split('\n').map(l => l.split(',')[4]).filter(Boolean));
   const CLICKBAIT = /ㄷㄷ|ㅋㅋ|충격|경악|발칵|난리|미친|미칠|소름|폭로|참교육|사이다|박살|역대급|초비상|대참사|긴급|속보\s*[!]|[!?]{2,}|…\s*$|\.\.\.?\s*$|이유\?$|결국\s/;
+  // 영어: 5글자 이상 전부 대문자 단어(FLEES, SHOCKING 등), 자극어
+  const CLICKBAIT_EN = /\b(shocking|insane|destroyed|exposed|meltdown|wild|humiliat\w*|panic\w*|flees?)\b|!\s*$/i;
+  const CAPS_WORD = /\b[A-Z]{5,}\b/;
   const qualityOk = r => {
     if (r.v.src !== 'search') return true;
     const subs = (stats[r.v.channel_id] || {}).subs, isNews = r.tp === 'news';
     if (listed.has(r.v.channel_id)) return true;
     if (isNews) {
-      if (CLICKBAIT.test(r.v.title || '')) return false;
+      const t = r.v.title || '';
+      if (CLICKBAIT.test(t) || (r.v.lang === 'global' && (CAPS_WORD.test(t) || CLICKBAIT_EN.test(t)))) return false;
       if (subs != null) return subs >= 50000;
       return (r.v.views || 0) >= 20000;                 // 구독자 수를 아직 모르면 조회수로 대신
     }
