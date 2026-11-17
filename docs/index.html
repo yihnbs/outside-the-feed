@@ -265,8 +265,8 @@ const out=[];
 items.forEach(it=>{const first=it.lines[0],thumbTop=T+first.y0-W*.007;
  if(thumbTop<T-W*.005||!edgeIsBackground(img,thumbTop,dark))return;   // 위가 잘린 항목: 썸네일 바로 위가 배경색이 아니면 버림
  const title=it.lines.map(l=>l.text).join(' ').replace(/\s+/g,' ').replace(/\s*(…|\.\.\.)\s*$/,'').trim();if(normTitle(title).length<2)return;
- const th=cropCanvas(img,W*.041,thumbTop,W*.41,W*.23,{scale:Math.min(1,320/(W*.41))});
- out.push({title,channel:it.channel,views:it.views,thumb:th.toDataURL('image/jpeg',.78),shot:shotIndex,source:'screenshot'});});
+ const th=cropCanvas(img,W*.041,thumbTop,W*.41,W*.23,{scale:Math.min(1,960/(W*.41))});   // 캡처 원본 해상도 그대로
+ out.push({title,channel:it.channel,views:it.views,thumb:th.toDataURL('image/jpeg',.92),shot:shotIndex,source:'screenshot'});});
 URL.revokeObjectURL(img.src);return out;}
 // ===== 구글 '내 활동'(myactivity) 화면: 컴퓨터·모바일 웹 =====
 // 'YouTube' 라벨 → 제목 + '을(를) 시청했습니다' → 채널 → '오후 1:48 · 세부정보' 순서. 글자 패턴으로 항목을 나눈다.
@@ -283,7 +283,7 @@ const col=new Array(Wc).fill(0);for(let y=0;y<Hc;y++)for(let x=0;x<Wc;x++)if(!bg
 const runs=(arr,thr,gap)=>{const r=[];let st=-1,last=-1;for(let i=0;i<=arr.length;i++){const on=i<arr.length&&arr[i]>thr;if(on){if(st<0)st=i;else if(i-last>gap){r.push([st,last+1]);st=i;}last=i;}}if(st>=0)r.push([st,last+1]);return r.sort((a,b)=>(b[1]-b[0])-(a[1]-a[0]))[0]||[0,0];};
 const best=runs(col,Hc*.2,Math.max(6,Wc*.02));if(best[1]-best[0]<Wc*.12)return null;
 const row=new Array(Hc).fill(0);for(let y=0;y<Hc;y++)for(let x=best[0];x<best[1];x++)if(!bg((y*Wc+x)*4))row[y]++;const bw=best[1]-best[0];const rb=runs(row,bw*.3,Math.max(6,Hc*.03));if(rb[1]-rb[0]<bw*.3)return null;
-const tw=best[1]-best[0];return cropCanvas(img,x0+best[0],y0+rb[0],tw,rb[1]-rb[0],{scale:Math.min(1,320/tw)}).toDataURL('image/jpeg',.78);}
+const tw=best[1]-best[0];return cropCanvas(img,x0+best[0],y0+rb[0],tw,rb[1]-rb[0],{scale:Math.min(1,960/tw)}).toDataURL('image/jpeg',.92);}
 async function ocrActivity(img,worker,shotIndex,ctx){
 const W=img.width,H=img.height,dark=isDark(img);
 await worker.setParameters({tessedit_pageseg_mode:'3'});
@@ -327,6 +327,10 @@ out.forEach(o=>{if(o.watched_time&&maj&&!(o._mer&&((/오후|pm/i.test(o._mer)&&m
 return out;}
 async function readShot(file,worker,i,ctx){const img=await loadImage(file);ctx.ref=new Date(file.lastModified||Date.now());const wide=img.width/img.height>.9;let items=[];
 try{items=wide?await ocrActivity(img,worker,i,ctx):await ocrScreenshot(file,worker,i);if(!items.length)items=wide?await ocrScreenshot(file,worker,i):await ocrActivity(img,worker,i,ctx);}finally{URL.revokeObjectURL(img.src);}return items;}
+// 캡처 항목을 영상 풀(videos.js)과 대조: 같은 영상이면 영상 ID를 붙여 원본 고화질 썸네일·직접 링크를 쓴다
+function matchPool(it){const P=window.OTF_VIDEO_POOL;if(!P||!P.videos)return null;const a=normTitle(it.title).slice(0,60);if(a.length<6)return null;const ch=normTitle(it.channel);let best=null,bs=0;
+for(const v of P.videos){const b=normTitle(v.t).slice(0,60);if(Math.abs(b.length-a.length)>Math.max(a.length,b.length)*.5)continue;if(!b.includes(a.slice(0,3))&&!a.includes(b.slice(0,3)))continue;const r=levenshteinRatio(a,b);if(r>bs){bs=r;best=v;}}
+if(!best||bs<.78)return null;const cr=levenshteinRatio(ch,normTitle(P.channels[best.c].title));return(bs>=.9||cr>=.5)?best.id:null;}
 function levenshteinRatio(a,b){if(a===b)return 1;const m=a.length,n=b.length;if(!m||!n)return 0;let prev=Array.from({length:n+1},(_,j)=>j);for(let i=1;i<=m;i++){const cur=[i];for(let j=1;j<=n;j++)cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));prev=cur;}return 1-prev[n]/Math.max(m,n);}
 // 캡처끼리 겹친 영상 제거: 다른 캡처에서 나온 같은 제목(잘림 포함)만 합친다 (같은 캡처 안은 그대로)
 function dedupeShots(items){const kept=[];let dropped=0;for(const it of items){const a=normTitle(it.title);const dup=kept.find(k=>k.shot!==it.shot&&!(k.watched_time&&it.watched_time&&k.watched_time!==it.watched_time)&&(()=>{const b=normTitle(k.title);if(a===b)return true;if(Math.min(a.length,b.length)>=12&&(a.startsWith(b)||b.startsWith(a)))return true;const sameTime=k.watched_time&&k.watched_time===it.watched_time;return levenshteinRatio(a,b)>=(sameTime?.8:.92)&&levenshteinRatio(normTitle(k.channel),normTitle(it.channel))>=.6;})());if(dup){dropped++;continue;}kept.push(it);}return{kept,dropped};}
@@ -336,14 +340,16 @@ isExample=false;$('error').classList.add('hidden');$('analyzeBtn').disabled=true
 try{state('PREPARING',2,'글자 인식 엔진 준비 중이에요. 처음 한 번은 몇 MB를 받아서 조금 걸려요.');const worker=await getOcr();let all=[];const ctx={date:'',ref:new Date()};
 for(let i=0;i<files.length;i++){state('READING SCREENSHOTS',Math.round(5+90*i/files.length),'캡처 '+(i+1)+' / '+files.length+' 읽는 중 · '+files[i].name);all=all.concat(await readShot(files[i],worker,i,ctx));}
 const {kept,dropped}=dedupeShots(all);if(!kept.length)throw Error('캡처에서 영상을 찾지 못했어요. 유튜브 앱 \'기록\' 화면이나 구글 \'내 활동\' 화면을 캡처했는지 확인해 주세요.');
+let matched=0;kept.forEach(x=>{const id=matchPool(x);if(id){x.video_id=id;matched++;}});
 shotItems=kept.map((x,i)=>({...x,order:i}));state('CHECK RESULTS',100,'영상 '+kept.length+'개를 읽었어요. 아래에서 확인하고 분석하세요.');
-$('shotSummary').textContent='캡처 '+files.length+'장 → 영상 '+kept.length+'개'+(dropped?' (캡처끼리 겹친 '+dropped+'개는 뺐어요)':'')+(kept.length<30?' · 영상이 적으면 분석이 흔들릴 수 있어요. 캡처를 더 올려도 돼요.':'');
+$('shotSummary').textContent='캡처 '+files.length+'장 → 영상 '+kept.length+'개'+(dropped?' (캡처끼리 겹친 '+dropped+'개는 뺐어요)':'')+(matched?' · '+matched+'개는 원본 영상을 찾아 고화질 썸네일로 바꿨어요':'')+(kept.length<30?' · 영상이 적으면 분석이 흔들릴 수 있어요. 캡처를 더 올려도 돼요.':'');
 renderShotList();$('shotReview').classList.remove('hidden');$('shotReview').scrollIntoView({behavior:reduced?'instant':'smooth',block:'start'});}
 catch(e){fail(e.message||String(e));}}
 function renderShotList(){$('shotList').replaceChildren(...shotItems.map((it,i)=>{const row=document.createElement('div');row.className='shot-row';
 const im=document.createElement('img');im.src=it.thumb;im.alt='';const t=document.createElement('input');t.value=it.title;t.setAttribute('aria-label','제목');t.oninput=()=>it.title=t.value;
 const c=document.createElement('input');c.className='ch';c.value=it.channel;c.setAttribute('aria-label','채널');c.oninput=()=>it.channel=c.value;
 const x=document.createElement('button');x.type='button';x.textContent='✕';x.setAttribute('aria-label','이 영상 빼기');x.onclick=()=>{shotItems.splice(i,1);renderShotList();$('shotSummary').textContent='영상 '+shotItems.length+'개';};
+if(it.video_id){im.src='https://i.ytimg.com/vi/'+it.video_id+'/mqdefault.jpg';im.title='원본 영상을 찾았어요';im.style.outline='2px solid var(--red)';}
 row.append(im,t,c,x);return row;}));}
 $('shotInput').addEventListener('change',e=>handleScreenshots(e.target.files));
 $('shotAnalyze').addEventListener('click',()=>{const rows=shotItems.filter(x=>normTitle(x.title).length>=2);if(!rows.length)return;prepared=process(rows);$('shotReview').classList.add('hidden');render(prepared);});
@@ -418,7 +424,7 @@ const rows=analysisData.records.filter(r=>imageUrl(r));const selected=rows.lengt
 const sampledCounts={};selected.forEach(r=>sampledCounts[r.category]=(sampledCounts[r.category]||0)+1);const indexes={};
 selected.forEach((r,i)=>{const group=topicOrder.findIndex(t=>t[0]===r.category),slot=indexes[r.category]||0;indexes[r.category]=slot+1;const b=document.createElement('button');b.className='particle';b.style.setProperty('--node-color',colorFor(r.category,group));b.setAttribute('aria-label',r.title+' · '+topicLabel(r.category)+(r.subtopic?' / '+r.subtopic:''));
 const img=document.createElement('img');img.alt='';img.loading='eager';img.decoding='async';img.referrerPolicy='no-referrer';
-const thumbSources=r.video_id?[imageUrl(r),'https://i.ytimg.com/vi/'+r.video_id+'/mqdefault.jpg','https://i.ytimg.com/vi/'+r.video_id+'/hqdefault.jpg','https://img.youtube.com/vi/'+r.video_id+'/0.jpg']:[r.thumb];
+const thumbSources=r.video_id?['https://i.ytimg.com/vi/'+r.video_id+'/hqdefault.jpg',imageUrl(r),'https://i.ytimg.com/vi/'+r.video_id+'/hqdefault.jpg','https://img.youtube.com/vi/'+r.video_id+'/0.jpg']:[r.thumb];
 let thumbAttempt=0;img.onerror=()=>{thumbAttempt++;if(thumbAttempt<thumbSources.length)img.src=thumbSources[thumbAttempt];else{b.hidden=true;b.style.display='none';}};img.src=thumbSources[0];b.append(img);
 b.onclick=()=>showNode(r);$('stageMap').append(b);particles.push({b,r,i,group,slot,groupCount:sampledCounts[r.category]});});
 topicOrder.forEach(([name,count],i)=>{const e=document.createElement('div');e.className='cluster-label';e.innerHTML=escapeHtml(topicLabel(name))+'<span>'+fmt(count)+'회</span>';e.style.color=colorFor(name,i);$('stageMap').append(e);labels.push(e)});
